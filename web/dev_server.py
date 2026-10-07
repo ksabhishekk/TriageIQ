@@ -13,7 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 API = os.environ.get("API", "http://127.0.0.1:8000").rstrip("/")
-FORWARD = ("/predict", "/complaint/", "/options/", "/model-info", "/health", "/docs", "/openapi.json")
+FORWARD = ("/predict", "/explain", "/xai/status", "/complaint/", "/options/", "/model-info", "/health", "/docs", "/openapi.json")
 CLEAN = {"/real": "/real.html", "/how": "/how.html"}           # vercel.json "cleanUrls"
 
 

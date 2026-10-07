@@ -66,3 +66,44 @@ class ComplaintOut(Prediction):
     narrative: str = Field(description="Cleaned text, exactly as the model read it ([DATE] / [REDACTED] = CFPB blanks)")
     what_actually_happened: str | None = Field(description="The company's real response")
     actually_paid: bool
+
+
+class XAIStatus(BaseModel):
+    enabled: bool
+    reason: str
+
+
+class FeatureExplanation(BaseModel):
+    feature: str
+    value: float
+    logit_contribution: float
+
+
+class SentenceExplanation(BaseModel):
+    text: str
+    logit_contribution: float
+
+
+class ModalityExplanation(BaseModel):
+    text_logit_contribution: float
+    track_record_logit_contribution: float
+    baseline_logit: float
+    current_logit: float
+    additivity_error: float
+
+
+class ExplanationOut(BaseModel):
+    payout_probability: float
+    route: Literal["senior analyst", "template response"]
+    model_version: str
+    features_as_of: date
+    text_word_pieces: int
+    text_cut_at_512: bool
+    modality: ModalityExplanation
+    features: list[FeatureExplanation]
+    feature_baseline_logit: float
+    feature_additivity_error: float
+    sentences: list[SentenceExplanation]
+    sentence_additivity_error: float
+    latency_ms: float
+    caveat: str = "Attributions describe model behavior, not the cause of a real-world payout."

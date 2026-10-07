@@ -2,8 +2,16 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "routes": [
     {
-      "src": "/(predict|health|model-info|docs|openapi\\.json)",
+      "src": "/(predict|explain|health|model-info|docs|openapi\\.json)",
       "dest": "http://3.106.107.237/$1",
+      "transforms": [
+        { "type": "request.headers", "op": "set", "target": { "key": "x-origin-secret" },
+          "args": "$ORIGIN_SECRET", "env": ["ORIGIN_SECRET"] }
+      ]
+    },
+    {
+      "src": "/xai/status",
+      "dest": "http://3.106.107.237/xai/status",
       "transforms": [
         { "type": "request.headers", "op": "set", "target": { "key": "x-origin-secret" },
           "args": "$ORIGIN_SECRET", "env": ["ORIGIN_SECRET"] }

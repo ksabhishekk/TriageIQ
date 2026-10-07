@@ -11,7 +11,8 @@ Design (Learning/Phase3/directions.md, step 3.4):
   - Endpoints are plain `def`, not `async def`: scoring keeps the CPU busy (no waiting to hand over), so
     FastAPI runs them on its thread pool and one slow request doesn't freeze the others.
 """
-import os, time
+import math, os, time
+from threading import Lock
 from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
@@ -20,16 +21,20 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import RedirectResponse
 
 from api import db
-from api.schemas import ComplaintIn, ComplaintOut, Prediction
+from api.schemas import ComplaintIn, ComplaintOut, ExplanationOut, Prediction, XAIStatus
 from api.scorer import Scorer
+from api.xai import Explainer
 
 MODEL_DIR = Path(os.environ.get("MODEL_DIR", "training/outputs/serving_v3"))
 THREADS = int(os.environ.get("ORT_THREADS", "2"))
+XAI_ENABLED = os.environ.get("XAI_ENABLED", "0") == "1"
+XAI_LOCK = Lock()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.scorer = Scorer(MODEL_DIR, THREADS)          # ~1 s: the 266 MB model is read once
+    app.state.explainer = None
     db.pool.open(wait=True, timeout=30)
     with db.pool.connection() as conn:
         app.state.as_of = db.snapshot_day(conn)
@@ -79,6 +84,84 @@ def predict(c: ComplaintIn):
         inputs={k: round(float(v), 6) for k, v in inputs.items()},
         text_word_pieces=s["word_pieces"], text_cut_at_512=s["cut_at_512"], notes=notes,
         latency_ms=round((time.perf_counter() - t0) * 1000, 1))
+
+
+@app.get("/xai/status", response_model=XAIStatus, tags=["explain"])
+def xai_status():
+    """Whether optional explanations are enabled and their runtime artifacts are present."""
+    if not XAI_ENABLED:
+        return XAIStatus(enabled=False, reason="Explanations are disabled pending split-graph parity and resource checks.")
+    missing = [
+        filename for filename in ("xai_encoder.onnx", "xai_head.onnx", "xai_background.npz")
+        if not (MODEL_DIR / filename).is_file()
+    ]
+    if missing:
+        return XAIStatus(enabled=False, reason=f"XAI artifacts are missing: {', '.join(missing)}")
+    return XAIStatus(
+        enabled=True,
+        reason="XAI is enabled by the operator; runtime parity and additivity checks run for each explanation.",
+    )
+
+
+@app.post("/explain", response_model=ExplanationOut, tags=["explain"])
+def explain(c: ComplaintIn):
+    """Explain one score on demand; this deliberately stays separate from /predict."""
+    if not XAI_ENABLED:
+        raise HTTPException(status_code=503, detail="Explanations are disabled until XAI parity and resource checks pass.")
+    explainer = app.state.explainer
+    if explainer is None:
+        with XAI_LOCK:
+            explainer = app.state.explainer
+            if explainer is None:
+                try:
+                    explainer = Explainer(MODEL_DIR, app.state.scorer, THREADS)
+                except FileNotFoundError as e:
+                    raise HTTPException(status_code=503, detail=str(e))
+                app.state.explainer = explainer
+
+    t0 = time.perf_counter()
+    with db.pool.connection() as conn:
+        try:
+            ids, _ = db.resolve(conn, c.company, c.product, c.sub_product, c.issue, c.state)
+        except db.NotFound as e:
+            raise HTTPException(status_code=422, detail=str(e))
+        inputs = db.model_input(conn, ids, c.older_american, c.servicemember)
+        text = db.clean(conn, c.narrative)
+
+    score = app.state.scorer.score(text, inputs)
+    result = explainer.explain(text, inputs)
+    logit_delta = abs(result["modality"]["current_logit"] -
+                      result["modality"]["baseline_logit"] -
+                      result["modality"]["text_logit_contribution"] -
+                      result["modality"]["track_record_logit_contribution"])
+    if logit_delta > 1e-5:
+        raise HTTPException(status_code=503, detail="XAI modality additivity check failed.")
+    if result["feature_additivity_error"] > 1e-5 or result["sentence_additivity_error"] > 1e-5:
+        raise HTTPException(status_code=503, detail="XAI attribution additivity check failed.")
+
+    calibrated = 1.0 / (1.0 + math.exp(-(
+        app.state.scorer.cal["a"] *
+        (result["modality"]["current_logit"] + app.state.scorer.cal["offset"]) +
+        app.state.scorer.cal["b"]
+    )))
+    if abs(calibrated - score["probability"]) > 1e-4:
+        raise HTTPException(status_code=503, detail="XAI and production model scores do not match.")
+
+    return ExplanationOut(
+        payout_probability=round(score["probability"], 5),
+        route=_route(score["senior"]),
+        model_version=app.state.scorer.card["model_version"],
+        features_as_of=app.state.as_of,
+        text_word_pieces=result["text_word_pieces"],
+        text_cut_at_512=result["text_cut_at_512"],
+        modality=result["modality"],
+        features=result["features"],
+        feature_baseline_logit=result["feature_baseline_logit"],
+        feature_additivity_error=result["feature_additivity_error"],
+        sentences=result["sentences"],
+        sentence_additivity_error=result["sentence_additivity_error"],
+        latency_ms=round((time.perf_counter() - t0) * 1000, 1),
+    )
 
 
 @app.get("/complaint/random", response_model=ComplaintOut, tags=["demo"])

@@ -51,6 +51,7 @@ services:
       PGPASSWORD: ${POSTGRES_PASSWORD}
       PGDATABASE: ${POSTGRES_DB}
       ORT_THREADS: "2"
+      XAI_ENABLED: ${XAI_ENABLED:-0}
     ports:
       - "127.0.0.1:8000:8000"                 # host:container — this machine only, never the internet
     depends_on:

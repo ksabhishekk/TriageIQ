@@ -7,5 +7,8 @@
 !training/outputs/serving_v3/preprocessing.json
 !training/outputs/serving_v3/calibration.json
 !training/outputs/serving_v3/model_card.json
+!training/outputs/serving_v3/xai_encoder.onnx
+!training/outputs/serving_v3/xai_head.onnx
+!training/outputs/serving_v3/xai_background.npz
 api/__pycache__
 api/run_local.sh

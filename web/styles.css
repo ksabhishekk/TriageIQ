@@ -149,6 +149,28 @@ input:focus, select:focus, textarea:focus { border-color: var(--ink); outline: n
 .ledger dd { margin: 0; font: 500 14px/1.4 var(--mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
 .notes { font-size: 14px; color: var(--ink-2); background: var(--paper-2); padding: 10px 14px; margin: 0 0 16px; }
 .foot-meta { font: 400 12px/1.6 var(--mono); color: var(--muted); }
+.xai-action { margin: 20px 0; }
+.xai-action > .btn { margin-bottom: 12px; }
+.xai-panel { border-top: 1px solid var(--rule-strong); padding-top: 18px; }
+.xai-panel h3 { margin: 18px 0 8px; }
+.xai-row { display: grid; grid-template-columns: minmax(125px, 1fr) minmax(80px, 1.4fr) 72px; gap: 10px;
+           align-items: center; border-bottom: 1px solid var(--rule); padding: 7px 0; font-size: 13px; }
+.xai-row b, .xai-sentence b { font: 500 12px/1.3 var(--mono); text-align: right; font-variant-numeric: tabular-nums; }
+.xai-meter { position: relative; display: block; height: 8px; background: var(--paper-2); }
+.xai-meter::after { content: ""; position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: var(--rule-strong); }
+.xai-meter i { position: absolute; top: 0; bottom: 0; display: block; }
+.xai-meter i.up { background: var(--accent); }
+.xai-meter i.down { background: var(--calm); }
+.xai-sentence { display: grid; grid-template-columns: minmax(0, 1fr) 64px; gap: 8px 12px; align-items: start;
+                border-bottom: 1px solid var(--rule); padding: 10px 0; font: 400 14px/1.5 var(--serif); }
+.xai-sentence .xai-meter { grid-column: 1 / -1; }
+.xai-sentence.up > span:first-child { text-decoration: underline; text-decoration-color: var(--accent); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+.xai-sentence.down > span:first-child { text-decoration: underline; text-decoration-color: var(--calm); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+.xai-caveat { margin: 16px 0 10px; padding: 10px 12px; border-left: 3px solid var(--rule-strong); background: var(--paper-2);
+              color: var(--ink-2); font-size: 13px; }
+@media (max-width: 560px) {
+  .xai-row { grid-template-columns: minmax(100px, 1fr) minmax(60px, 1fr) 62px; gap: 7px; font-size: 12px; }
+}
 
 /* ---------- real complaints ---------- */
 .controls { display: flex; gap: 0; margin: 26px 0 28px; border: 1px solid var(--ink); width: fit-content; }

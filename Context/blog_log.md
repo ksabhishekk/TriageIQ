@@ -204,6 +204,11 @@ that didn't; how often does the model rank the payout one higher? 50 is a coin f
     *Proof it matters:* early on, the company rates were computed from the sample itself. The sample is a
     quarter payouts instead of about 3%, so every rate came out inflated — and the history-only score lost
     about 3 points out of 100 (idea #17 above).
+20. **An explanation is not the reason.** We can test which words and track-record values moved the model's
+    score, but that does not tell us why a company chose to refund someone. Hiding a sentence and rescoring
+    is also an imperfect experiment: the remaining story may sound unlike anything the model saw in training.
+    The explanation stays off until the split model is proven to give the same score and the tests show that
+    its highlighted parts matter more than random ones.
 ---
 
 ## 4. Classroom ideas that turned out to matter
@@ -600,4 +605,3 @@ first?"** So almost every score is about **ordering**, not about being right or 
 - **What we refuse to use: accuracy.** Saying "no payout" to every 2024 complaint is 97.7% accurate — and
   completely useless. A yes/no score like F2 *(recall counted twice as much as precision)* comes later,
   when a real desk chooses where to draw its "send to a senior" line.
-

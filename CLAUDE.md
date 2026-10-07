@@ -7,14 +7,21 @@
 > Regenerate it with `python training/canonical_facts.py`.
 > **Keep this file updated as work progresses** — it is the handoff artifact between sessions.
 
-Last updated: 2026-10-06 · **all phases built and live** · model = DistilBERT fusion v3 (19 inputs), Platt-calibrated ·
+Last updated: 2026-10-07 · **core phases built and live; optional XAI implementation gated off** · model = DistilBERT fusion v3 (19 inputs), Platt-calibrated ·
 site on Vercel, API on AWS EC2 (Sydney) · blog on GitHub Pages · remaining work is optional (§0)
 
 ---
 
-## 0. Where we are — read this first (2026-10-06)
+## 0. Where we are — read this first (2026-10-07)
 
 **State: built, deployed, written up.** Phases 0–3 are done; nothing is half-finished. What's left is optional.
+
+**Optional XAI (2026-10-07):** source for split ONNX graphs, an isolated `/explain` endpoint, status route, and an opt-in
+website control are now added. `XAI_ENABLED` defaults to `0`; `/predict` and the live site remain unchanged. This checkout
+does not contain the ignored model bundle, training checkpoint, or training parquet, so the export/parity check and API
+resource checks have **not** run. Do not enable or deploy XAI yet. On the Mac, restore those existing artifacts, run
+`python training/serving/export_xai_onnx.py`, then the unit/offline validation; only consider enabling it after parity,
+faithfulness, latency, and RAM checks pass. No XAI measurements belong in `Context/FACTS.md` until measured.
 
 | what | where |
 |---|---|
@@ -60,7 +67,13 @@ EC2 `3.106.107.237` (403 without the secret; 5 req/s per visitor) → FastAPI (`
 6. **"5 most similar past complaints"** (pgvector) — in the original design, never built (README marks it).
 7. Hygiene: scikit-learn undeclared in `pyproject.toml` (trap 8); audit items L1/L4/L5; FACTS.md's "F3" frame
    row still describes the v2 parquet (301,460) — generated file: fix in `training/canonical_facts.py`, then regenerate.
-8. **Teardown** at the end (by 2027-04-02): delete every resource in §12, then release the Elastic IP.
+8. **Finish XAI validation** (optional): restore the Mac-only model/training artifacts, run the split-graph parity check,
+   run `python -m unittest api.test_xai`, install `training/explain/requirements.txt` in the research environment,
+   run `python training/explain/validate_xai.py` and `python training/explain/integrated_gradients.py`, then measure
+   latency and RAM on the server. Only then decide whether to enable it by setting `XAI_ENABLED=1` both in the deploy
+   environment and for `deploy/push.sh` (which transfers the optional artifacts only when enabled). It is currently
+   gated off; details in `training/serving/log.md`.
+9. **Teardown** at the end (by 2027-04-02): delete every resource in §12, then release the Elastic IP.
 
 Learning side (Shivam): courses + the DMLS book after exams (`Learning/README.md`); interview prep from
 `Learning/Phase0–3/revision.md` + `Context/interview.md`.
@@ -666,4 +679,3 @@ urgent: v3's ranking did not decay in 2024 (within-company Jul–Dec 0.8296 vs f
 base rate, which calibration on the newest data already handles. ~2 days of work → not in the 4-day plan.
 **Cut / deferred:** int8 (ship fp32 ONNX unless time), CI/CD and the drift report (buffer day or later), HTTPS/domain
 (optional), courses + book (after deploy).
-

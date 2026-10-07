@@ -13,9 +13,9 @@ rest get a standard reply.
 > **The story behind it — [Finding the two percent](https://bajaj30.github.io/TriageIQ/)**, an illustrated essay.
 
 > [!NOTE]
-> **Status: built and live (October 2026).** This is a learning project: the goal was to build every stage of a
-> machine-learning product by hand, from a raw CSV to a public link. One optional feature, marked **⏳**, was
-> planned but not built.
+> **Status: core demo built and live (October 2026).** This is a learning project: the goal was to build every stage of a
+> machine-learning product by hand, from a raw CSV to a public link. Similar-complaint retrieval remains **⏳** planned;
+> optional explanations are being added behind a disabled-by-default validation gate and are not on the live site.
 
 ---
 
@@ -120,6 +120,7 @@ flowchart LR
 |---|---|
 | Chance this complaint ends with a payout | a percentage — e.g. **31.7%** for a disputed overdraft fee |
 | Suggested route | 👩‍💼 senior analyst, or 📄 template reply |
+| Why the model gave that score | ⏳ optional XAI explanation; gated off until parity and server-resource checks pass |
 | The 5 most similar past complaints | ⏳ of 5 ended with a payout *(planned, not built)* |
 
 ---
@@ -391,6 +392,8 @@ flowchart TB
 - **Senior time goes where money is at stake:** reading the riskiest **10%** of complaints catches **93%** of all payouts (2024 test, all companies together).
 - **Fewer surprises:** rare but expensive cases inside "low-risk" products get flagged by their words.
 - **Each score could come with examples:** the most similar past complaints and how they ended (⏳ planned, not built).
+- **An explanation is being added separately:** it will describe how the model used the words and track-record inputs,
+  not why the company actually paid. It stays off until the split ONNX graphs match the live model and pass server checks.
 
 ---
 
@@ -423,6 +426,8 @@ flowchart LR
 - **It knows *whether* money was paid, not *how much*.** Amounts aren't published.
 - **The AI can only read about 1 in 3 complaints** — the ones whose writers chose to publish their story.
 - **It decides who looks first, not how a complaint is resolved.** People still handle every complaint.
+- **An explanation is not a cause.** If enabled after validation, attributions describe the model's use of words and
+  history; hiding text can create an unusual story the model never saw during training.
 
 ---
 
@@ -450,7 +455,7 @@ visitor ─https─▶ Vercel (static site) ─forwards API paths + a secret hea
 | Calibration | case-control offset −2.4165, then Platt scaling fitted on Jul–Dec 2024; senior if p ≥ 0.0367 (the riskiest 10%) | [`training/serving/calibrate.py`](training/serving/calibrate.py) |
 | Packaging | ONNX export (no PyTorch at serving time) — matches PyTorch to 1e-5 | [`training/serving/export_onnx.py`](training/serving/export_onnx.py) |
 | Serving features | `serving.model_input()` from an end-of-data snapshot — **skew test: 19/19 inputs identical** to training on 20,773 complaints | [`sql/06_serving/`](sql/06_serving/) |
-| API | FastAPI: `POST /predict`, `GET /complaint/random`, `GET /complaint/{id}`, `/options/*`, `/model-info`, `/health` | [`api/`](api/) |
+| API | FastAPI: `POST /predict`, optional gated `POST /explain` (`/xai/status`), `GET /complaint/random`, `GET /complaint/{id}`, `/options/*`, `/model-info`, `/health` | [`api/`](api/) |
 | Deployment | Docker Compose (db restored from a 57 MB dump + api + NGINX) on one EC2 t4g.small (ARM, Sydney), ≈ $21/month | [`deploy/`](deploy/) |
 | Website | plain HTML/CSS/JS on Vercel | [`web/`](web/) |
 | Essay | GitHub Pages | [`docs/`](docs/) |
@@ -458,6 +463,11 @@ visitor ─https─▶ Vercel (static site) ─forwards API paths + a secret hea
 **Design rules:** no leakage (every input computable at complaint receipt) · one source of truth for features
 (all feature logic in SQL; training and serving use the same formulas, proven by the skew test) · temporal split,
 never random · reproducible (SEED = 42, every quoted number has the code that made it).
+
+**Explainability status:** the API/UI and split-graph exporter are implemented but disabled by default. The
+non-git model bundle and training checkpoint are not present in this checkout, so parity and server latency/RAM
+have not yet been measured. Do not enable or deploy explanations until `training/serving/export_xai_onnx.py`
+passes its parity check on the Mac.
 
 ### Every model on the same exam
 

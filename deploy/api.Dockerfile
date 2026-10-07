@@ -1,7 +1,7 @@
 # ============================================================
 # deploy/api.Dockerfile — the recipe for the API image (code + packages + model, no PyTorch)
-# Build context = the repo root (see deploy/docker-compose.yml); .dockerignore lets in ONLY api/ and the
-# 5 model files — never the 9 GB CSV, the 16 GB database, or .env.
+# Build context = the repo root (see deploy/docker-compose.yml); .dockerignore allows api/, the five
+# required model files, and optional XAI artifacts — never the 9 GB CSV, the 16 GB database, or .env.
 #
 # CONCEPTS
 #   layers + cache : each instruction is a layer; unchanged layers are reused. Requirements are installed
@@ -25,11 +25,9 @@ RUN useradd --create-home --uid 1000 app
 WORKDIR /app
 COPY --from=build /venv /venv
 # the model bundle (training/serving/): changes rarely -> its own layer, before the code
-COPY training/outputs/serving_v3/model.onnx \
-     training/outputs/serving_v3/tokenizer.json \
-     training/outputs/serving_v3/preprocessing.json \
-     training/outputs/serving_v3/calibration.json \
-     training/outputs/serving_v3/model_card.json  /app/model/
+# .dockerignore is an allow-list: this directory contains only the five production files and, after
+# parity validation, the three optional XAI artifacts.
+COPY training/outputs/serving_v3/ /app/model/
 # the code: changes most often -> last layer
 COPY api/ /app/api/
 ENV PATH=/venv/bin:$PATH \

@@ -6,9 +6,9 @@
 "use strict";
 
 // ---------------------------------------------------------------- talking to the API
-async function api(path, options = {}) {
+async function api(path, options = {}, timeoutMs = 20000) {
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 20000);            // a score never takes 20 s; give up cleanly
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);        // explanations have a separate, longer budget
   try {
     const res = await fetch(path, { ...options, signal: ctrl.signal,
       headers: { "Content-Type": "application/json", ...(options.headers || {}) } });
@@ -127,9 +127,38 @@ const EXAMPLES = {
 
 async function initScore() {
   const form = $("#score-form");
+  const out = $("#assessment");
   const productSel = $("#product"), subSel = $("#sub_product"), issueSel = $("#issue"), stateSel = $("#state");
   const company = $("#company"), list = $("#company-list"), text = $("#narrative"), count = $("#word-count");
   let products = [];
+  let xaiEnabled = false;
+  let lastRequest = null;
+  let lastScore = null;
+  api("/xai/status").then((status) => {
+    xaiEnabled = status.enabled === true;
+    if (lastScore) renderAssessment(lastScore);
+  }).catch(() => { xaiEnabled = false; });
+
+  function renderAssessment(result) {
+    out.innerHTML = assessmentHTML(result, xaiEnabled);
+    if (!xaiEnabled) return;
+    const explainBtn = $("#explain-btn", out), explainResult = $("#xai-result", out);
+    explainBtn.addEventListener("click", async () => {
+      explainBtn.disabled = true; explainBtn.textContent = "Explaining…";
+      explainResult.innerHTML = '<p class="loading">Checking the complaint against the model</p>';
+      try {
+        const explanation = await api("/explain", {
+          method: "POST", body: JSON.stringify(lastRequest),
+        }, 25000);
+        explainResult.innerHTML = explanationHTML(explanation);
+      } catch (err) {
+        const detail = err.body && typeof err.body.detail === "string" ? err.body.detail : problemText(err);
+        explainResult.textContent = detail || "Could not create the explanation.";
+      } finally {
+        explainBtn.disabled = false; explainBtn.textContent = "Explain the score";
+      }
+    });
+  }
 
   function fillSubs(selected) {
     const p = products.find((x) => x.product === productSel.value);
@@ -194,12 +223,14 @@ async function initScore() {
     if (missing.length) { missing.forEach((k) => fieldError(k, "Required.")); return; }
     if (words() < 20) { fieldError("narrative", "Write at least 20 words — the model was trained on complaints of 20 words or more."); return; }
 
-    const btn = $("#score-btn"), out = $("#assessment");
+    const btn = $("#score-btn");
+    lastRequest = body;
     btn.disabled = true; btn.textContent = "Scoring…";
     out.innerHTML = '<p class="loading">Reading the complaint and the company’s track record</p>';
     try {
       const r = await api("/predict", { method: "POST", body: JSON.stringify(body) });
-      out.innerHTML = assessmentHTML(r);
+      lastScore = r;
+      renderAssessment(r);
     } catch (err) {
       out.innerHTML = emptyAssessment();
       if (err.status === 422) show422(err.body);
@@ -211,7 +242,7 @@ async function initScore() {
   updateCount();
 }
 
-function assessmentHTML(r) {
+function assessmentHTML(r, xaiEnabled) {
   const senior = r.route === "senior analyst";
   const notes = (r.notes || []).map((n) => `<p class="notes">${esc(n)}</p>`).join("");
   const cut = r.text_cut_at_512 ? `<p class="notes">This complaint is longer than the model reads; it read the first 510 word-pieces.</p>` : "";
@@ -224,9 +255,57 @@ function assessmentHTML(r) {
     ${scaleHTML(r.payout_probability, r.senior_threshold)}
     <h3>What the model saw besides the text</h3>
     ${ledgerHTML(r.inputs)}
+    ${xaiEnabled ? `<div class="xai-action"><button class="btn btn-quiet" id="explain-btn" type="button">Explain the score</button>
+      <div id="xai-result" aria-live="polite"></div></div>` : ""}
     ${notes}${cut}
     <p class="foot-meta">Track records as of ${dateLong(r.features_as_of)} · scored in ${Math.round(r.latency_ms)} ms · ${esc(r.model_version)}</p>`;
 }
+
+const XAI_LABELS = {
+  product_id: "Product category", sub_product_id: "Sub-product", issue_id: "Issue", state_id: "State",
+  is_older_american: "Older American tag", is_servicemember: "Servicemember tag",
+  company_no_history: "Company has no payout history", company_issue_no_history: "No history for this issue",
+  company_issue_rate_s: "Company payout rate for this issue", company_rate_s: "Company payout rate overall",
+  issue_rate_s: "Payout rate for this issue", product_rate_s: "Payout rate for this product",
+  company_untimely_rate: "Company unanswered rate", company_share_90d: "Company complaint share",
+  company_issue_share_90d: "Company–issue complaint share", issue_share_90d: "Issue complaint share",
+  company_trend_90d: "Company complaint trend", issue_trend_90d: "Issue complaint trend",
+  company_quiet_days: "Days since previous company complaint",
+};
+function xaiNumber(value) { return `${value >= 0 ? "+" : ""}${value.toFixed(4)}`; }
+function xaiMeter(value, maxAbs) {
+  const width = maxAbs ? Math.max(2, Math.abs(value) / maxAbs * 50) : 2;
+  const direction = value >= 0 ? "up" : "down";
+  const edge = value >= 0 ? "left" : "right";
+  return `<span class="xai-meter"><i class="${direction}" style="${edge}:50%;width:${width}%"></i></span>`;
+}
+function explanationHTML(r) {
+  const mod = r.modality;
+  const maxModality = Math.max(Math.abs(mod.text_logit_contribution), Math.abs(mod.track_record_logit_contribution));
+  const features = [...r.features].sort((a, b) =>
+    Math.abs(b.logit_contribution) - Math.abs(a.logit_contribution)).slice(0, 8);
+  const maxFeature = Math.max(...features.map((x) => Math.abs(x.logit_contribution)), 0);
+  const sentences = [...r.sentences].sort((a, b) =>
+    Math.abs(b.logit_contribution) - Math.abs(a.logit_contribution));
+  const maxSentence = Math.max(...sentences.map((x) => Math.abs(x.logit_contribution)), 0);
+  const cut = r.text_cut_at_512
+    ? `<p class="notes">The model read only the first 510 word-pieces; later text has no attribution.</p>` : "";
+  return `<section class="xai-panel">
+    <h3>Words vs. track record</h3>
+    <p class="small">Signed contributions to the model's raw logit, averaged over training examples. Positive raises the score; negative lowers it.</p>
+    <div class="xai-row"><span>Words</span>${xaiMeter(mod.text_logit_contribution, maxModality)}<b>${xaiNumber(mod.text_logit_contribution)}</b></div>
+    <div class="xai-row"><span>Track record</span>${xaiMeter(mod.track_record_logit_contribution, maxModality)}<b>${xaiNumber(mod.track_record_logit_contribution)}</b></div>
+    <p class="small">Baseline logit ${mod.baseline_logit.toFixed(4)} · additivity error ${mod.additivity_error.toExponential(1)}</p>
+    <h3>Track-record inputs</h3>
+    ${features.map((x) => `<div class="xai-row"><span>${esc(XAI_LABELS[x.feature] || x.feature)}</span>${xaiMeter(x.logit_contribution, maxFeature)}<b>${xaiNumber(x.logit_contribution)}</b></div>`).join("")}
+    <h3>Complaint sentences</h3>
+    ${sentences.map((x) => `<div class="xai-sentence ${x.logit_contribution >= 0 ? "up" : "down"}">
+      <span>${esc(x.text)}</span><b>${xaiNumber(x.logit_contribution)}</b>${xaiMeter(x.logit_contribution, maxSentence)}</div>`).join("")}
+    ${cut}<p class="xai-caveat">${esc(r.caveat)} Feature credit can be shared among related inputs; sentence masking can change the wording the model sees.</p>
+    <p class="foot-meta">Explanation took ${Math.round(r.latency_ms)} ms · errors: features ${r.feature_additivity_error.toExponential(1)}, sentences ${r.sentence_additivity_error.toExponential(1)}</p>
+  </section>`;
+}
+
 function emptyAssessment() {
   return `<div class="assess-empty"><p>The assessment appears here.</p>
           <p>Fill in a complaint, or start from an example.</p></div>`;

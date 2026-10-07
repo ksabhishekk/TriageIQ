@@ -218,6 +218,34 @@ tiny gradients from rounding to zero. The T4 has no bf16.
 
 **Compute:** about 481 s per epoch on one free Kaggle T4.
 
+## 7.5 Explaining a prediction — what an attribution does and does not say
+
+**Attribution.** A score is a result of many inputs. An attribution shares that result among the words and
+track-record values the model read; it describes the model's behavior, not what caused a company to pay.
+
+**Shapley values.** A cooperative-game idea for sharing credit: measure what each input adds across different
+orders in which inputs are introduced. Contributions are in the model's raw-logit units and add back to the
+score difference from the chosen background. TriageIQ groups each category ID as one player and samples a
+fixed number of feature orders.
+
+**Background.** The examples used as the comparison point change the answer to "what mattered?" TriageIQ's
+planned background is a fixed, reproducible sample of 2024 serving/demo complaints, using only their intake
+text and features; no outcomes are read. The current complaint is never compared with an artificial average
+category ID.
+
+**Sentence masking.** The planned text explanation removes a sentence or a redaction marker and re-scores the
+remaining words. Removed text can make an unusual sentence, so this is a test of model sensitivity, not a
+guarantee that the consumer's wording was the real-world cause.
+
+**Faithfulness checks.** Additivity checks whether contributions reconstruct the same model score.
+Deletion/insertion checks compare removing or restoring highly attributed sentences with random ones.
+Stability checks whether attributions persist when the background sample or random seed changes. These
+checks are required before publishing explanations.
+
+**Status:** implementation is opt-in and disabled until the split ONNX graphs pass parity against the deployed
+graph and the server's latency and memory are measured. The offline scripts cover SHAP, LIME, Integrated
+Gradients, additivity, deletion/insertion and stability; no explanation-quality results have been recorded yet.
+
 ---
 
 ## 8. Data design for ML
